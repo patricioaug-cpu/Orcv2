@@ -1,0 +1,34 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "functions": {
+    "api/*.ts": {
+      "includeFiles": "{data/**,dist/data/**}",
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "api/**/*.ts": {
+      "includeFiles": "{data/**,dist/data/**}",
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/analyze-project",
+      "destination": "/api/analyze-project"
+    },
+    {
+      "source": "/api/analyze-project/(.*)",
+      "destination": "/api/analyze-project"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
