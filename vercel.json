@@ -6,11 +6,6 @@
       "includeFiles": "{data/**,dist/data/**}",
       "maxDuration": 60,
       "memory": 1024
-    },
-    "api/**/*.ts": {
-      "includeFiles": "{data/**,dist/data/**}",
-      "maxDuration": 60,
-      "memory": 1024
     }
   },
   "rewrites": [
