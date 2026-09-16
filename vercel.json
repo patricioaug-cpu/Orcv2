@@ -2,12 +2,12 @@
   "version": 2,
   "cleanUrls": true,
   "functions": {
-    "api/*.ts": {
+    "api/index.ts": {
       "includeFiles": "data/**",
       "maxDuration": 60,
       "memory": 1024
     },
-    "api/*": {
+    "api/analyze-project.ts": {
       "includeFiles": "data/**",
       "maxDuration": 60,
       "memory": 1024
