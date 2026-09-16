@@ -30,12 +30,12 @@ export interface DocumentPreprocessResult {
   overallDeterministicComplete: boolean;
 }
 
-// Regex patterns for electrical network detection
+// Regex patterns for electrical network detection and technical project sheets
 const KEYWORD_NETWORK_RELEVANTE =
-  /\b(POSTE|P[0-9]{1,3}\b|N[1-4]\b|M[1-4]\b|CE[1-4]\b|2CE[1-4]\b|B[1-4]\b|U[1-4]\b|SI[1-4]\b|S[1-2][1-4]N\b|CHAVE|FUS[IÍ]VEL|TRANSFORMADOR|TRAFO|KVA|CONDUTOR|CABO|CAA|CAL|COP|ESTAI|13\.?8\s*KV|34\.?5\s*KV|CRUZETA|ISOLADOR)\b/i;
+  /\b(POSTE|P[0-9]{1,4}\b|ESTR|ESTRUTURA|REDE|DISTRIBUI[ÇC]|CEMIG|CHAVE|FUS[IÍ]VEL|SECCIONADOR|DISJUNTOR|TRANSFORMADOR|TRAFO|KVA|CONDUTOR|CABO|CAA|CAL|COP|MULTIPLEX|ESTAI|[AÁ]NCORA|13\.?8\s*K?V|34\.?5\s*K?V|380\s*V|220\s*V|CRUZETA|ISOLADOR|DAN|CIRCULAR|DUPLO\s*T|DT\b|N[1-4]\b|M[1-4]\b|CE[1-4]\b|2CE[1-4]\b|B[1-4]\b|U[1-4]\b|SI[1-4]\b|S[1-2][1-4]N\b|PLANTA|PRANCHA|CROQUI|UNIFILAR|TRIFILAR|DIAGRAMA|ESQUEMA|ALIMENTADOR|CIRCUITO|SUBESTA[ÇC][ÃA]O|DERIVA[ÇC][ÃA]O|RAMAL|BARRAMENTO|PARA[\-\s]*RAIO|CHAVE[\-\s]*FACA|SECCIONADORA)\b/i;
 
 const KEYWORD_DOCUMENT_IRRELEVANTE =
-  /\b(ANOTA[ÇC][ÃA]O DE RESPONSABILIDADE T[EÉ]CNICA|A\.?R\.?T\.?|TERMO DE COMPROMISSO|CONTRATO DE PRESTA[ÇC][ÃA]O|MEMORIAL DESCRITIVO DE CARGAS|C[AÁ]LCULO DE DEMANDA|FOLHA DE ROSTO|SUM[AÁ]RIO|CERTID[ÃA]O)\b/i;
+  /\b(ANOTA[ÇC][ÃA]O DE RESPONSABILIDADE T[EÉ]CNICA|A\.?R\.?T\.?|TERMO DE COMPROMISSO|CONTRATO DE PRESTA[ÇC][ÃA]O|CERTID[ÃA]O|PROCURA[ÇC][ÃA]O)\b/i;
 
 /**
  * Pre-processes PDF document or image to classify pages and extract deterministic text.
@@ -127,17 +127,14 @@ export class PagePreprocessorService {
 
           if (hasIrrelevantKeywords && !hasNetworkKeywords) {
             relevance = "IRRELEVANTE";
-            relevanceReason = "Página de documentação administrativa (ART/Memorial sem diagrama).";
+            relevanceReason = "Página de documentação administrativa (ART/Termo/Certidão sem diagrama).";
           } else if (hasNetworkKeywords) {
             relevance = "RELEVANTE";
-            relevanceReason = "Página técnica contendo palavras-chave e marcações de rede CEMIG.";
-          } else if (pageText.length > 500) {
-            // Text-heavy page with no network keywords
-            relevance = "IRRELEVANTE";
-            relevanceReason = "Página de texto genérico sem marcações da rede elétrica.";
+            relevanceReason = "Página técnica contendo palavras-chave e marcações da rede elétrica.";
           } else {
+            // Default to POSSIVELMENTE_RELEVANTE so diagrams or CAD sheets are not dropped
             relevance = "POSSIVELMENTE_RELEVANTE";
-            relevanceReason = "Página com poucos textos (possível prancha gráfica ou diagrama).";
+            relevanceReason = "Prancha gráfica ou diagrama técnico do projeto.";
           }
         } else {
           // Scanned page or pure vector diagram with minimal selectable text
@@ -149,12 +146,20 @@ export class PagePreprocessorService {
         let deterministicData = undefined;
         let isDeterministicComplete = false;
 
-        if (hasText && relevance === "RELEVANTE") {
+        if (hasText && relevance !== "IRRELEVANTE") {
           const extracted = this.extractDeterministicFromText(pageText, pageNum);
-          if (extracted.poles.length >= 2 && extracted.structures.length >= 2) {
+          if (
+            extracted.poles.length > 0 ||
+            extracted.structures.length > 0 ||
+            extracted.transformers.length > 0 ||
+            extracted.cables.length > 0 ||
+            extracted.equipment.length > 0
+          ) {
             deterministicData = extracted;
-            // If table has comprehensive poles and structures with matching quantities
-            isDeterministicComplete = true;
+            // If table has comprehensive poles and structures
+            if (extracted.poles.length >= 2 && extracted.structures.length >= 2) {
+              isDeterministicComplete = true;
+            }
           }
         }
 
@@ -311,6 +316,37 @@ export class PagePreprocessorService {
         status: "INSTALAR",
         spansCount: 1,
         estimatedLengthMeters: 40,
+        pageNumber: pageNum,
+      });
+    }
+
+    // Equipment: switches, cutouts, surge arresters, etc.
+    const equipRegex = /\b(CFS|CHAVE\s*FUS[IÍ]VEL|CHAVE\s*FACA|SECCIONADORA|DISJUNTOR|PARA[\-\s]*RAIO|MUFLA)\b/gi;
+    let eqMatch;
+    let eqIdx = 1;
+    while ((eqMatch = equipRegex.exec(text)) !== null) {
+      const eqRaw = eqMatch[1].toUpperCase();
+      const code = eqRaw.includes("FUS") || eqRaw === "CFS" ? "CFS" : eqRaw;
+      equipment.push({
+        id: `EQ_${pageNum}_${eqIdx++}`,
+        code,
+        type: code === "CFS" ? "CHAVE_FUSIVEL" : "EQUIPAMENTO",
+        status: "INSTALAR",
+        description: `Equipamento ${code}`,
+        pageNumber: pageNum,
+      });
+    }
+
+    // Guys / Stay wires
+    const guyRegex = /\b(ESTAI|CONTRA[\-\s]*POSTE|[AÁ]NCORA|ESTAIAMENTO)\b/gi;
+    let gMatch;
+    let gIdx = 1;
+    while ((gMatch = guyRegex.exec(text)) !== null) {
+      guys.push({
+        id: `EST_${pageNum}_${gIdx++}`,
+        type: "ANCORA",
+        quantity: 1,
+        status: "INSTALAR",
         pageNumber: pageNum,
       });
     }

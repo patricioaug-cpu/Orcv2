@@ -624,7 +624,7 @@ export const StructureDetailModal: React.FC<StructureDetailModalProps> = ({
                   const totalQty = (Number(it.quantity) || 0) * sameCodeStructures.length;
                   return (
                     <div
-                      key={`m_comp_${it.id || idx}`}
+                      key={`m_comp_${it.id || "elem"}_${idx}`}
                       className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2"
                     >
                       {/* Card Header: Index, Code badge, Unit badge */}
@@ -742,7 +742,7 @@ export const StructureDetailModal: React.FC<StructureDetailModalProps> = ({
                       const totalQty = (Number(it.quantity) || 0) * sameCodeStructures.length;
                       return (
                         <tr
-                          key={`comp_${it.id || idx}`}
+                          key={`comp_${it.id || "elem"}_${idx}`}
                           className={`hover:bg-amber-50/40 transition-colors ${
                             idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"
                           }`}

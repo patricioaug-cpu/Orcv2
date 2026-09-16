@@ -92,11 +92,7 @@ export class JobStorageService {
    */
   public async saveJobPayload(jobId: string, payload: JobInputPayload): Promise<void> {
     if (!redisService.isConfigured()) {
-      if (process.env.NODE_ENV === "production") {
-        throw new Error(
-          "[JobStorage] UPSTASH_REDIS_REST_URL e UPSTASH_REDIS_REST_TOKEN não configurados. Armazenamento de payload requer Redis em produção."
-        );
-      }
+      console.warn(`[JobStorage] Redis não configurado. Payload do job ${jobId} mantido em memória local.`);
       this.localDevPayloads.set(jobId, payload);
       return;
     }
@@ -194,11 +190,7 @@ export class JobStorageService {
     };
 
     if (!redisService.isConfigured()) {
-      if (process.env.NODE_ENV === "production") {
-        throw new Error(
-          "[JobStorage] UPSTASH_REDIS_REST_URL e UPSTASH_REDIS_REST_TOKEN não configurados. Armazenamento persistente de jobs requer Redis em produção."
-        );
-      }
+      console.warn(`[JobStorage] Redis não configurado no ambiente. Job ${jobId} mantido em memória local.`);
       this.localDevJobs.set(job.jobId, job);
       return job;
     }
@@ -209,11 +201,6 @@ export class JobStorageService {
 
   public async getJob(jobId: string): Promise<AnalysisJob | null> {
     if (!redisService.isConfigured()) {
-      if (process.env.NODE_ENV === "production") {
-        throw new Error(
-          "[JobStorage] UPSTASH_REDIS_REST_URL e UPSTASH_REDIS_REST_TOKEN não configurados. Armazenamento persistente de jobs requer Redis em produção."
-        );
-      }
       return this.localDevJobs.get(jobId) || null;
     }
 
@@ -357,12 +344,7 @@ export class JobStorageService {
 
   private async saveJobToRedis(job: AnalysisJob): Promise<void> {
     if (!redisService.isConfigured()) {
-      if (process.env.NODE_ENV === "production") {
-        throw new Error(
-          "[JobStorage] UPSTASH_REDIS_REST_URL e UPSTASH_REDIS_REST_TOKEN não configurados. Armazenamento persistente de jobs requer Redis em produção."
-        );
-      }
-      console.warn(`[JobStorage] Redis não configurado no ambiente. Job ${job.jobId} não persistido em Redis.`);
+      this.localDevJobs.set(job.jobId, job);
       return;
     }
 
@@ -401,15 +383,10 @@ export class JobStorageService {
 
     // Verificação de ambiente Redis
     if (!redisService.isConfigured()) {
-      if (process.env.NODE_ENV === "production") {
-        throw new Error(
-          "[DistributedLock] UPSTASH_REDIS_REST_URL e UPSTASH_REDIS_REST_TOKEN não configurados. Lock distribuído não pode operar sem Redis na Vercel."
-        );
-      }
       console.warn(
-        "[DistributedLock] Redis não configurado no ambiente local de desenvolvimento. Para concorrência distribuída em produção na Vercel, configure as variáveis Upstash."
+        "[DistributedLock] Redis não configurado no ambiente. Operando com lock local por instância."
       );
-      this.activeLocksByJob.set(jobId, { slotKey: "calcpro:lock:gemini:slot:1", token: "local_dev" });
+      this.activeLocksByJob.set(jobId, { slotKey: "calcpro:lock:gemini:slot:1", token: "local" });
       return true;
     }
 

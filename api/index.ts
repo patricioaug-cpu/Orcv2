@@ -1,4 +1,14 @@
+process.env.IS_SERVERLESS = "1";
+process.env.VERCEL = process.env.VERCEL || "1";
+
 import app from "../server";
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[Vercel /api/index unhandledRejection]:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[Vercel /api/index uncaughtException]:", err);
+});
 
 export const config = {
   maxDuration: 60,
@@ -8,6 +18,10 @@ export const config = {
 };
 
 export default function handler(req: any, res: any) {
+  if (req.url && !req.url.startsWith("/api/")) {
+    req.url = "/api" + (req.url.startsWith("/") ? req.url : "/" + req.url);
+  }
+
   return new Promise((resolve) => {
     let resolved = false;
     const finish = () => {

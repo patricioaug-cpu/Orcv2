@@ -4,13 +4,13 @@
       "id": "usr_admin_master",
       "nome": "Administrador CalcPro",
       "email": "patricioaug@gmail.com",
-      "senha_hash": "3d108c6dde4c19a1b80c2dac14a5b353:4436b412d78fde1c4634a632b6964b74069aa2a81351fbf55049679d839fd679",
+      "senha_hash": "d6703fb9e6f9268115635651b72b51f6:fce9a58f664807654f928175548553b2a7d853f86a95ec66f17ef7216964c0e1",
       "status": "liberado",
       "trial_inicio": "",
       "trial_fim": "",
       "created_at": "2026-09-08T09:33:30.049Z",
-      "last_login": "2026-09-09T09:59:58.997Z",
-      "device_serial": "SN-MTSH6X5M-M4HFY16S"
+      "last_login": "2026-09-15T18:47:21.471Z",
+      "device_serial": "SN-MU10II94-RHM45BS4"
     },
     {
       "id": "usr_1788860079059_f0l5",
@@ -26,6 +26,17 @@
     }
   ],
   "logins": [
+    {
+      "id": "log_1789498041471_qrnz",
+      "user_id": "usr_admin_master",
+      "user_name": "Administrador CalcPro",
+      "user_email": "patricioaug@gmail.com",
+      "data_hora": "2026-09-15T18:47:21.471Z",
+      "data_hora_formatada": "15/09/2026, 15:47:21",
+      "ip": "2804:214:a091:1be7:18d5:7086:beca:23fa, 169.254.169.126",
+      "device_serial": "SN-MU10II94-RHM45BS4",
+      "notificacao_enviada": true
+    },
     {
       "id": "log_1788947998998_nqzd",
       "user_id": "usr_admin_master",
@@ -106,6 +117,20 @@
   ],
   "calculos": [
     {
+      "id": "calc_1789498085752_710i",
+      "user_id": "usr_admin_master",
+      "user_email": "patricioaug@gmail.com",
+      "dados_json": {
+        "fileName": "115a4b5242435354517c7275-13574f455359547a.pdf",
+        "voltageLevel": "13.8kV",
+        "structures": 0,
+        "materials": 0
+      },
+      "carga_termica": 0,
+      "metodo": "Explosão de Mnemônicos CEMIG",
+      "data": "2026-09-15T18:48:05.752Z"
+    },
+    {
       "id": "calc_1789116884032_z4cl",
       "user_id": "usr_admin_master",
       "user_email": "patricioaug@gmail.com",
@@ -145,6 +170,22 @@
   ],
   "reset_codes": [],
   "email_notifications": [
+    {
+      "id": "notif_1789498041473_a44bx",
+      "recipient": "patricioaug@gmail.com",
+      "subject": "[CalcPro] Novo Login Realizado - Administrador CalcPro",
+      "body": "Olá, Patricio!\n\nUm novo login foi registrado no aplicativo CalcPro:\n\n- Nome do Usuário: Administrador CalcPro\n- E-mail: patricioaug@gmail.com\n- Data e Hora: 15/09/2026, 15:47:21\n- Status da Conta: ADMINISTRADOR (ACESSO VITALÍCIO / SEM CONTABILIZAÇÃO DE TRIAL)\n- Endereço IP: 2804:214:a091:1be7:18d5:7086:beca:23fa, 169.254.169.126\n- Número de Série do Dispositivo: SN-MU10II94-RHM45BS4\n\n---\nNotificação automática gerada pelo servidor CalcPro.",
+      "timestamp": "2026-09-15T18:47:21.472Z",
+      "status": "registrado_servidor"
+    },
+    {
+      "id": "reset_1789498025148",
+      "recipient": "patricioaug@gmail.com",
+      "subject": "[CalcPro] Código para Redefinição de Senha: 642159",
+      "body": "Solicitação de redefinição de senha para Administrador CalcPro (patricioaug@gmail.com). Autorizada recuperação direta pelo sistema.",
+      "timestamp": "2026-09-15T18:47:05.129Z",
+      "status": "registrado_servidor"
+    },
     {
       "id": "notif_1788947998999_qjfeh",
       "recipient": "patricioaug@gmail.com",

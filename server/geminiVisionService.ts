@@ -51,10 +51,10 @@ export class GeminiVisionService {
       throw new Error("JOB_CANCELLED");
     }
 
-    // Economical fast models first, reserving heavier models only as last resort
-    const primaryModel = process.env.GEMINI_PRIMARY_MODEL || "gemini-2.5-flash";
-    const fallbackModels = ["gemini-3.1-flash-lite", "gemini-flash-latest"];
-    const models = [primaryModel, ...fallbackModels];
+    // Supported Gemini models per guidelines: gemini-3.6-flash is highly stable for multimodal vision, with gemini-3.8-flash and gemini-flash-latest as fallbacks
+    const primaryModel = process.env.GEMINI_PRIMARY_MODEL || "gemini-3.6-flash";
+    const fallbackModels = ["gemini-3.8-flash", "gemini-flash-latest"];
+    const models = [primaryModel, ...fallbackModels.filter((m) => m !== primaryModel)];
 
     const compactPrompt = `Analise a prancha técnica do projeto elétrico CEMIG (Tensão: ${voltageLabel}).
 EXTRAÇÃO DE REDE:
@@ -94,14 +94,30 @@ REGRAS:
             }, MODEL_TIMEOUT_MS);
           });
 
+          const rawData = imageBase64.includes(";base64,") ? imageBase64.split(";base64,")[1] : imageBase64;
+          let effectiveMime = mimeType;
+          if (imageBase64.includes(";base64,")) {
+            const extractedMime = imageBase64.split(";base64,")[0].replace("data:", "").trim();
+            if (extractedMime) effectiveMime = extractedMime;
+          }
+          if (rawData.startsWith("JVBERi0") || rawData.startsWith("JVBERi")) {
+            effectiveMime = "application/pdf";
+          } else if (rawData.startsWith("iVBORw0KGgo")) {
+            effectiveMime = "image/png";
+          } else if (rawData.startsWith("/9j/")) {
+            effectiveMime = "image/jpeg";
+          } else if (!effectiveMime) {
+            effectiveMime = "image/jpeg";
+          }
+
           const modelCall = ai.models.generateContent({
             model: modelName,
             contents: {
               parts: [
                 {
                   inlineData: {
-                    mimeType: mimeType || "image/jpeg",
-                    data: imageBase64.includes(";base64,") ? imageBase64.split(";base64,")[1] : imageBase64,
+                    mimeType: effectiveMime,
+                    data: rawData,
                   },
                 },
                 {

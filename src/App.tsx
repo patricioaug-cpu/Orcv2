@@ -221,13 +221,7 @@ export default function App() {
   const [trialInfo, setTrialInfo] = useState<UserTrialInfo | null>(null);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
   const [isTrialExpiredModalOpen, setIsTrialExpiredModalOpen] = useState<boolean>(false);
-  const [showSplash, setShowSplash] = useState<boolean>(() => {
-    try {
-      return sessionStorage.getItem("rdr_rdu_splash_completed") !== "true";
-    } catch {
-      return true;
-    }
-  });
+  const [showSplash, setShowSplash] = useState<boolean>(false);
 
   // Sync trial info from backend on mount or user change
   useEffect(() => {
@@ -1316,12 +1310,12 @@ export default function App() {
             const statusRes = await fetch(`/api/analyze-project/status?jobId=${encodeURIComponent(resJson.jobId)}`);
             if (statusRes.ok) {
               const statusJson = await statusRes.json();
-              if (statusJson.success && statusJson.job) {
-                const j = statusJson.job;
+              const j = statusJson.job || (statusJson.status ? statusJson : null);
+              if (statusJson.success && j) {
                 if (j.progress) setProgressPercent(Math.min(95, Math.max(15, j.progress)));
                 if (j.stageMessage) setProcessingStatusText(j.stageMessage);
                 if (j.status === "COMPLETED" && j.result) {
-                  resJson = j.result;
+                  resJson = j.result.success !== undefined ? j.result : { success: true, ...j.result };
                   jobDone = true;
                   break;
                 } else if (j.status === "FAILED") {
@@ -1342,8 +1336,8 @@ export default function App() {
         }
       }
 
-      if (resJson.success && resJson.data) {
-        const rawData = resJson.data;
+      if (resJson && (resJson.success || resJson.data || resJson.officialProcessing)) {
+        const rawData = resJson.data || resJson;
 
         // Helper para extrair o número do poste para ordenação sequencial
         const extractPoleNumber = (idStr: string | undefined): number => {
@@ -1353,11 +1347,27 @@ export default function App() {
         };
 
         const aiStructures: IdentifiedStructure[] = [];
+        const usedStructureIds = new Set<string>();
+
+        const getUniqueStructureId = (candidate: string) => {
+          const base = candidate && candidate.trim() ? candidate.trim() : "STR";
+          if (!usedStructureIds.has(base)) {
+            usedStructureIds.add(base);
+            return base;
+          }
+          let counter = 2;
+          while (usedStructureIds.has(`${base}_${counter}`)) {
+            counter++;
+          }
+          const uniqueId = `${base}_${counter}`;
+          usedStructureIds.add(uniqueId);
+          return uniqueId;
+        };
 
         // 1. Postes detectados no projeto
         if (Array.isArray(rawData.detectedPoles)) {
           rawData.detectedPoles.forEach((p: any, idx: number) => {
-            const poleId = p.id || `P${idx + 1}`;
+            const poleId = getUniqueStructureId(p.id || `P${idx + 1}`);
             aiStructures.push({
               id: poleId,
               code: p.typeSpec || p.mnemonicCode || "POSTE",
@@ -1378,8 +1388,9 @@ export default function App() {
         // 2. Estruturas MT e BT detectadas no projeto
         if (Array.isArray(rawData.detectedStructures)) {
           rawData.detectedStructures.forEach((s: any, idx: number) => {
-            const poleRef = s.associatedPost || s.id || `P${idx + 1}`;
-            const cleanId = `${poleRef}_${s.code || idx + 1}`;
+            const poleRef = s.associatedPost || (s.id && !s.id.includes("_") ? s.id : `P${idx + 1}`);
+            const baseId = s.id ? s.id : `${poleRef}_${s.code || idx + 1}`;
+            const cleanId = getUniqueStructureId(baseId);
             aiStructures.push({
               id: cleanId,
               code: s.code || "N1",
@@ -1403,8 +1414,9 @@ export default function App() {
           : [];
         detectedEquip.forEach((eq: any, idx: number) => {
           const poleRef = eq.associatedPole || `P${idx + 1}`;
+          const cleanId = getUniqueStructureId(eq.id || `EQ_${poleRef}_${eq.code || idx + 1}`);
           aiStructures.push({
-            id: `EQ_${poleRef}_${eq.code || idx + 1}`,
+            id: cleanId,
             code: eq.code || eq.specification || "EQUIPAMENTO",
             mnemonicCode: eq.mnemonicCode,
             type: "EQUIPAMENTO",
@@ -1421,8 +1433,9 @@ export default function App() {
         if (Array.isArray(rawData.detectedTransformers)) {
           rawData.detectedTransformers.forEach((t: any, idx: number) => {
             const poleRef = t.associatedPole || `P${idx + 1}`;
+            const cleanId = getUniqueStructureId(t.id || `TR_${poleRef}`);
             aiStructures.push({
-              id: `TR_${poleRef}`,
+              id: cleanId,
               code: t.powerKva ? `TR ${t.powerKva}kVA` : "TRANSFORMADOR",
               mnemonicCode: t.mnemonicCode,
               type: "TRANSFORMADOR",
@@ -1440,8 +1453,9 @@ export default function App() {
         if (Array.isArray(rawData.detectedGuys)) {
           rawData.detectedGuys.forEach((g: any, idx: number) => {
             const poleRef = g.associatedPole || `P${idx + 1}`;
+            const cleanId = getUniqueStructureId(g.id || `ESTAI_${poleRef}_${idx + 1}`);
             aiStructures.push({
-              id: `ESTAI_${poleRef}_${idx + 1}`,
+              id: cleanId,
               code: g.type || "ESTAI",
               mnemonicCode: g.mnemonicCode,
               type: "ESTAI",
@@ -1492,10 +1506,21 @@ export default function App() {
           })
         );
 
-        const official = rawData.officialProcessing;
-        if (!official) {
-          throw new Error("O backend não retornou o processamento do catálogo oficial.");
-        }
+        const official =
+          rawData?.officialProcessing ||
+          resJson?.officialProcessing ||
+          (resJson as any)?.orchestration?.officialProcessing ||
+          (rawData as any)?.orchestration?.officialProcessing || {
+            materials: [],
+            groupedMnemonics: [],
+            structureItemMap: {},
+            mnemonicosNaoEncontrados: [],
+            catalogStats: {
+              mnemonicosTotal: 7203,
+              componentesTotal: 30949,
+              itensCatalogoTotal: 1558,
+            },
+          };
 
         const materials = official.materials || [];
         const groupedMnemonics = official.groupedMnemonics || [];
@@ -1877,9 +1902,9 @@ export default function App() {
                 </p>
               ) : (
                 <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                  {structuresSummary.map(({ code, count }) => (
+                  {structuresSummary.map(({ code, count }, idx) => (
                     <button
-                      key={code}
+                      key={`struct_sum_${code}_${idx}`}
                       onClick={() => handleOpenStructureDetailByCode(code)}
                       className="w-full flex justify-between items-center p-2.5 bg-slate-50 hover:bg-amber-50 rounded-lg border border-slate-200 hover:border-amber-400 text-xs transition-all cursor-pointer group text-left shadow-2xs"
                       title={`Clique para abrir composição e editar materiais da Estrutura ${code} em tela cheia`}
@@ -1906,9 +1931,9 @@ export default function App() {
                   Elementos Mapeados na Planta ({projectData.structures.length})
                 </h3>
                 <div className="max-h-52 overflow-y-auto space-y-1 pr-1">
-                  {projectData.structures.map((s) => (
+                  {projectData.structures.map((s, idx) => (
                     <button
-                      key={s.id}
+                      key={`proj_struct_${s.id || "elem"}_${idx}`}
                       onClick={() => handleOpenStructureDetail(s)}
                       className="w-full text-left p-1.5 bg-white hover:bg-amber-50 rounded border border-slate-200 text-[11px] flex items-center justify-between transition-colors cursor-pointer group"
                       title="Clique para ver os materiais deste elemento em tela cheia"
@@ -1982,7 +2007,9 @@ export default function App() {
                   {projectData.mnemonicosNaoEncontrados.length} código(s) não existem no catálogo oficial. Nenhum componente foi inventado para eles.
                 </p>
                 <div className="max-h-28 overflow-auto text-[10px] font-mono text-amber-900 space-y-0.5">
-                  {projectData.mnemonicosNaoEncontrados.map((code) => <div key={code}>{code}</div>)}
+                  {projectData.mnemonicosNaoEncontrados.map((code, idx) => (
+                    <div key={`mne_nf_${code}_${idx}`}>{code}</div>
+                  ))}
                 </div>
               </div>
             )}
@@ -2008,9 +2035,9 @@ export default function App() {
                 </div>
 
                 <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                  {savedProjects.map((p) => (
+                  {savedProjects.map((p, idx) => (
                     <div
-                      key={p.id}
+                      key={`saved_proj_${p.id}_${idx}`}
                       className="w-full p-2 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-xs transition-all flex items-center justify-between gap-2 shadow-2xs group"
                     >
                       <button

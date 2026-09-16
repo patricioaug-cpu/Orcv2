@@ -11,7 +11,12 @@ export const SplashIntro: React.FC<SplashIntroProps> = ({ onComplete }) => {
 
   useEffect(() => {
     // Check if splash was already shown in this browser session
-    const hasSeenSplash = sessionStorage.getItem("rdr_rdu_splash_completed");
+    let hasSeenSplash: string | null = null;
+    try {
+      hasSeenSplash = sessionStorage.getItem("rdr_rdu_splash_completed");
+    } catch {
+      hasSeenSplash = "true";
+    }
     if (hasSeenSplash === "true") {
       setIsDismissed(true);
       onComplete();
@@ -54,7 +59,11 @@ export const SplashIntro: React.FC<SplashIntroProps> = ({ onComplete }) => {
   }, [onComplete]);
 
   const finishSplash = () => {
-    sessionStorage.setItem("rdr_rdu_splash_completed", "true");
+    try {
+      sessionStorage.setItem("rdr_rdu_splash_completed", "true");
+    } catch {
+      // ignore storage error in restricted iframe
+    }
     setIsDismissed(true);
     onComplete();
   };

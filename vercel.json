@@ -3,7 +3,7 @@
   "cleanUrls": true,
   "functions": {
     "api/*.ts": {
-      "includeFiles": "{data/**,dist/data/**}",
+      "includeFiles": "data/**",
       "maxDuration": 60,
       "memory": 1024
     }

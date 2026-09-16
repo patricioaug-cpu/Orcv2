@@ -175,7 +175,7 @@ export class SimulatedJobDispatcher implements JobDispatcher {
   public readonly type = "SIMULATED";
   private queuedJobs: Array<{ jobId: string; options?: DispatchOptions }> = [];
   private localLeases = new Map<string, { token: string; metadata: ExecutionMetadata; expiresAt: number }>();
-  public autoProcessInDev: boolean = false;
+  public autoProcessInDev: boolean = true;
 
   public getQueueLength(): number {
     return this.queuedJobs.length;

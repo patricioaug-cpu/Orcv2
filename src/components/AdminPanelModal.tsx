@@ -367,13 +367,13 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                     Nenhum usuário encontrado para os critérios de busca.
                   </div>
                 ) : (
-                  filteredUsers.map((u) => {
+                  filteredUsers.map((u, uIdx) => {
                     const isUserAdmin = u.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
                     const isExpired = u.trialInfo?.isExpired;
                     const daysLeft = u.trialInfo?.daysRemaining ?? 0;
 
                     return (
-                      <div key={u.id} className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-xs space-y-2">
+                      <div key={`user_mob_${u.id || u.email}_${uIdx}`} className="p-2.5 bg-white rounded-xl border border-slate-200 shadow-xs space-y-2">
                         {/* User Header */}
                         <div className="flex items-start justify-between gap-1.5">
                           <div className="min-w-0 flex-1">
@@ -527,13 +527,13 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                         </td>
                       </tr>
                     ) : (
-                      filteredUsers.map((u) => {
+                      filteredUsers.map((u, uIdx) => {
                         const isUserAdmin = u.email.toLowerCase() === ADMIN_EMAIL.toLowerCase();
                         const isExpired = u.trialInfo?.isExpired;
                         const daysLeft = u.trialInfo?.daysRemaining ?? 0;
 
                         return (
-                          <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
+                          <tr key={`user_tbl_${u.id || u.email}_${uIdx}`} className="hover:bg-slate-50/80 transition-colors">
                             <td className="py-2 px-3">
                               <div className="font-semibold text-slate-900">{u.nome}</div>
                               <div className="text-[11px] text-slate-500 font-mono">{u.email}</div>
@@ -713,8 +713,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                         </td>
                       </tr>
                     ) : (
-                      logins.map((l) => (
-                        <tr key={l.id} className="hover:bg-slate-50 transition-colors">
+                      logins.map((l, lIdx) => (
+                        <tr key={`log_${l.id || "elem"}_${lIdx}`} className="hover:bg-slate-50 transition-colors">
                           <td className="py-3 px-4 font-mono text-[11px] text-slate-800 font-medium">
                             {l.data_hora_formatada || new Date(l.data_hora).toLocaleString("pt-BR")}
                           </td>
@@ -748,8 +748,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                     Nenhum log de notificação registrado no momento.
                   </div>
                 ) : (
-                  notifications.map((notif) => (
-                    <div key={notif.id} className="p-4 bg-white hover:bg-slate-50 transition-colors text-xs">
+                  notifications.map((notif, nIdx) => (
+                    <div key={`notif_${notif.id || "elem"}_${nIdx}`} className="p-4 bg-white hover:bg-slate-50 transition-colors text-xs">
                       <div className="flex items-center justify-between gap-2 mb-1.5">
                         <div className="font-semibold text-slate-900 flex items-center gap-2">
                           <Mail className="w-3.5 h-3.5 text-indigo-600" />
@@ -797,8 +797,8 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                         </td>
                       </tr>
                     ) : (
-                      calculos.map((calc) => (
-                        <tr key={calc.id} className="hover:bg-slate-50 transition-colors">
+                      calculos.map((calc, cIdx) => (
+                        <tr key={`calc_${calc.id || "elem"}_${cIdx}`} className="hover:bg-slate-50 transition-colors">
                           <td className="py-3 px-4 font-mono text-[11px]">
                             {new Date(calc.data).toLocaleString("pt-BR")}
                           </td>
@@ -841,9 +841,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   Quantidade de dias adicionais:
                 </label>
                 <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-                  {[7, 15, 30].map((days) => (
+                  {[7, 15, 30].map((days, dIdx) => (
                     <button
-                      key={days}
+                      key={`days_${days}_${dIdx}`}
                       type="button"
                       onClick={() => setExtendDaysAmount(days)}
                       className={`py-1.5 text-xs font-bold rounded-lg border transition-colors cursor-pointer ${

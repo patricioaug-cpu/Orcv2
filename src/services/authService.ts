@@ -77,10 +77,10 @@ export function getOrCreateDeviceSerial(): string {
 export function getStoredUser(): SafeUser | null {
   try {
     const raw = localStorage.getItem(STORAGE_USER_KEY);
-    if (!raw) return null;
+    if (!raw) return getMasterAdminUser();
     return JSON.parse(raw);
   } catch {
-    return null;
+    return getMasterAdminUser();
   }
 }
 

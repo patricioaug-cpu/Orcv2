@@ -1,4 +1,14 @@
+process.env.IS_SERVERLESS = "1";
+process.env.VERCEL = process.env.VERCEL || "1";
+
 import app from "../server";
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[Vercel /api/analyze-project unhandledRejection]:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[Vercel /api/analyze-project uncaughtException]:", err);
+});
 
 export const config = {
   maxDuration: 60,

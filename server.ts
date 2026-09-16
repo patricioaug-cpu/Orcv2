@@ -74,16 +74,21 @@ app.use((req, res, next) => {
 
 // Robust body parsing compatible with both Vercel Serverless Functions and standalone Express
 app.use((req, res, next) => {
-  // If Vercel pre-parsed the body as string, parse it
+  // If Vercel pre-parsed the body as string or buffer, parse it
   if (typeof req.body === "string") {
     try {
       req.body = JSON.parse(req.body);
       (req as any)._body = true;
     } catch {}
+  } else if (Buffer.isBuffer(req.body)) {
+    try {
+      req.body = JSON.parse(req.body.toString("utf-8"));
+      (req as any)._body = true;
+    } catch {}
   }
   // If req.body is already present (e.g. from Vercel built-in parser),
   // flag it so body-parser does not attempt to re-read the consumed stream
-  if (req.body !== undefined && req.body !== null) {
+  if (req.body !== undefined && req.body !== null && typeof req.body === "object") {
     (req as any)._body = true;
     return next();
   }
@@ -780,6 +785,7 @@ app.get(
     }
     return res.json({
       success: true,
+      job,
       jobId: job.jobId,
       status: job.status,
       progress: job.progress,
@@ -913,6 +919,7 @@ app.all(["/api/analyze-project", "/analyze-project"], async (req, res) => {
       }
       return res.json({
         success: true,
+        job,
         jobId: job.jobId,
         status: job.status,
         progress: job.progress,
@@ -1140,9 +1147,18 @@ async function startServer() {
   server.timeout = 180000;
 }
 
-const isVercel = Boolean(process.env.VERCEL || process.env.NOW_REGION);
+const isServerless = Boolean(
+  process.env.VERCEL ||
+  process.env.VERCEL_ENV ||
+  process.env.VERCEL_REGION ||
+  process.env.NOW_REGION ||
+  process.env.AWS_LAMBDA_FUNCTION_NAME ||
+  process.env.LAMBDA_TASK_ROOT ||
+  process.env.IS_SERVERLESS
+);
+
 const isTest = process.env.NODE_ENV === "test" || Boolean(process.env.IS_TEST);
-if (!isVercel && !isTest) {
+if (!isServerless && !isTest) {
   startServer();
 }
 

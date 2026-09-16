@@ -432,8 +432,8 @@ export const LaborSheet: React.FC<LaborSheetProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {filteredItems.map((item) => (
-                  <tr key={item.item} className="hover:bg-slate-50/80 transition-colors">
+                {filteredItems.map((item, idx) => (
+                  <tr key={`labor_${item.item}_${idx}`} className="hover:bg-slate-50/80 transition-colors">
                     {/* Item Number */}
                     <td className="py-3 px-3 text-center font-bold text-slate-400">
                       {item.item}
@@ -587,11 +587,11 @@ export const LaborSheet: React.FC<LaborSheetProps> = ({
 
             {/* Catalog List */}
             <div className="p-4 overflow-y-auto space-y-2 flex-1 divide-y divide-slate-100">
-              {filteredCatalog.map((cat) => {
+              {filteredCatalog.map((cat, cIdx) => {
                 const inList = laborItems.find((i) => i.item === cat.item);
                 return (
                   <div
-                    key={cat.item}
+                    key={`cat_${cat.item}_${cIdx}`}
                     className="pt-2.5 pb-2 flex items-center justify-between gap-3 hover:bg-slate-50 px-2 rounded-xl transition-colors"
                   >
                     <div className="flex items-start gap-3">

@@ -68,8 +68,15 @@ export class ProjectProcessingPipeline {
         job.telemetry.cachedPages = 1;
         job.telemetry.cacheHit = true;
         job.telemetry.processingTimeMs = Date.now() - startTime;
+        const cachedRes = cachedProject.result || {};
         job.result = {
-          ...cachedProject.result,
+          success: true,
+          ...cachedRes,
+          data: {
+            ...(cachedRes.data || {}),
+            officialProcessing: cachedRes.officialProcessing || cachedRes.data?.officialProcessing,
+          },
+          officialProcessing: cachedRes.officialProcessing || cachedRes.data?.officialProcessing,
           source: "cache",
           cacheHit: true,
           hash: fileHash,
@@ -128,7 +135,11 @@ export class ProjectProcessingPipeline {
         detectedCables: [],
       };
 
-      const relevantPages = prepResult.pages.filter((p) => p.relevance !== "IRRELEVANTE");
+      let relevantPages = prepResult.pages.filter((p) => p.relevance !== "IRRELEVANTE");
+      if (relevantPages.length === 0) {
+        console.warn(`[Pipeline] Nenhuma página classificada como relevante. Analisando todas as ${prepResult.pages.length} páginas do documento.`);
+        relevantPages = prepResult.pages;
+      }
 
       for (let i = 0; i < relevantPages.length; i++) {
         if (await jobStorage.isJobCancelled(job.jobId)) {
@@ -156,6 +167,9 @@ export class ProjectProcessingPipeline {
         if (cachedPageData) {
           console.log(`[Pipeline] Prancha ${page.pageNumber}: Cache HIT granular por página (${page.pageHash.slice(0, 10)}).`);
           this.mergePageData(aggregatedExtractedData, cachedPageData.extractedData, page.pageNumber);
+          if (page.deterministicData) {
+            this.mergePageData(aggregatedExtractedData, page.deterministicData, page.pageNumber);
+          }
           job.telemetry.cachedPages++;
           continue;
         }
@@ -171,7 +185,8 @@ export class ProjectProcessingPipeline {
           return { cancelled: true };
         }
 
-        let visionResult: any;
+        let visionResult: any = null;
+        let visionError: any = null;
         try {
           visionResult = await geminiVision.interpretSheet(
             page.imageBufferOrBase64 || base64Data,
@@ -179,23 +194,46 @@ export class ProjectProcessingPipeline {
             voltageLabel,
             job.jobId
           );
+        } catch (vErr: any) {
+          visionError = vErr;
+          console.warn(`[Pipeline] Falha na interpretação visual da prancha ${page.pageNumber}:`, vErr?.message || vErr);
         } finally {
           jobStorage.releaseGeminiSlot(job.jobId);
         }
 
-        job.telemetry.geminiCalls++;
-        job.telemetry.retriesCount += visionResult.retries || 0;
-        if (visionResult.promptTokens) {
-          job.telemetry.promptTokens = (job.telemetry.promptTokens || 0) + visionResult.promptTokens;
-        }
-        if (visionResult.candidateTokens) {
-          job.telemetry.candidateTokens = (job.telemetry.candidateTokens || 0) + visionResult.candidateTokens;
-        }
-        job.telemetry.modelUsed = visionResult.modelUsed;
+        if (visionResult && visionResult.data) {
+          job.telemetry.geminiCalls++;
+          job.telemetry.retriesCount += visionResult.retries || 0;
+          if (visionResult.promptTokens) {
+            job.telemetry.promptTokens = (job.telemetry.promptTokens || 0) + visionResult.promptTokens;
+          }
+          if (visionResult.candidateTokens) {
+            job.telemetry.candidateTokens = (job.telemetry.candidateTokens || 0) + visionResult.candidateTokens;
+          }
+          job.telemetry.modelUsed = visionResult.modelUsed;
 
-        // Save into per-page cache
-        pageCache.setPageCache(page.pageHash, visionResult.data);
-        this.mergePageData(aggregatedExtractedData, visionResult.data, page.pageNumber);
+          // Save into per-page cache
+          pageCache.setPageCache(page.pageHash, visionResult.data);
+          this.mergePageData(aggregatedExtractedData, visionResult.data, page.pageNumber);
+
+          // Complement with any native text data if available
+          if (page.deterministicData) {
+            this.mergePageData(aggregatedExtractedData, page.deterministicData, page.pageNumber);
+          }
+        } else if (page.deterministicData) {
+          // If Gemini Vision failed, seamlessly use deterministic native text data
+          console.log(`[Pipeline] Usando dados determinísticos da prancha ${page.pageNumber} como fallback seguro.`);
+          this.mergePageData(aggregatedExtractedData, page.deterministicData, page.pageNumber);
+          job.telemetry.deterministicExtractionUsed = true;
+        } else if (visionError) {
+          // Check if we have gathered any elements so far from earlier pages
+          const hasElements =
+            aggregatedExtractedData.detectedPoles.length > 0 ||
+            aggregatedExtractedData.detectedStructures.length > 0;
+          if (!hasElements && i === relevantPages.length - 1) {
+            throw visionError;
+          }
+        }
       }
 
       // ==========================================
@@ -294,6 +332,21 @@ export class ProjectProcessingPipeline {
         });
       });
 
+      aggregatedExtractedData.detectedCables.forEach((c: any, idx: number) => {
+        elementosParaReconhecimento.push({
+          id: c.id || `CAB_${idx + 1}`,
+          tipo: "CABO",
+          codigo: c.cableType || c.code || c.mnemonicCode,
+          mnemonicCode: c.mnemonicCode,
+          tensao: c.voltage || voltageLevel,
+          status: c.status,
+          descricao: `Condutor ${c.cableType || c.code || ""}`.trim(),
+          localizacao: c.fromPole && c.toPole ? `Entre ${c.fromPole} e ${c.toPole}` : undefined,
+          quantidade: Number(c.estimatedLengthMeters || c.quantity || 1),
+          pagina: Number(c.pageNumber || 1),
+        });
+      });
+
       // Execute sovereign orchestration engine
       const orchestrationResult = processarProjetoComSimbologiaOficial(
         elementosParaReconhecimento,
@@ -303,7 +356,11 @@ export class ProjectProcessingPipeline {
       job.telemetry.processingTimeMs = Date.now() - startTime;
 
       const finalResult = {
-        data: aggregatedExtractedData,
+        success: true,
+        data: {
+          ...aggregatedExtractedData,
+          officialProcessing: orchestrationResult.officialProcessing,
+        },
         recognitionAudit: orchestrationResult.recognitionAudit,
         orchestration: orchestrationResult,
         officialProcessing: orchestrationResult.officialProcessing,
@@ -344,39 +401,151 @@ export class ProjectProcessingPipeline {
   private mergePageData(target: any, source: any, pageNum: number): void {
     if (!source) return;
 
-    if (Array.isArray(source.detectedPoles)) {
-      source.detectedPoles.forEach((p: any) => {
-        target.detectedPoles.push({ ...p, pageNumber: pageNum });
+    // Support nested result envelopes
+    const src = source.data || source.resultado || source.project || source;
+
+    // 1. Poles (detectedPoles, poles, postes)
+    const rawPoles = src.detectedPoles || src.poles || src.postes || [];
+    if (Array.isArray(rawPoles)) {
+      rawPoles.forEach((p: any, idx: number) => {
+        const poleId = p.id || (p.numero ? `P${p.numero}` : `P${target.detectedPoles.length + 1}`);
+        const typeSpec = p.typeSpec || p.spec || p.tipo || p.especificacao || "11-300";
+        const shape = p.shape || p.formato || "CIRCULAR";
+        const material = p.material || "CONCRETO";
+        const status = p.status || p.estado || "INSTALAR";
+
+        // Prevent exact duplicate pole IDs on the same page
+        const alreadyExists = target.detectedPoles.some(
+          (existing: any) => existing.id === poleId && existing.pageNumber === pageNum
+        );
+        if (!alreadyExists) {
+          target.detectedPoles.push({
+            ...p,
+            id: poleId,
+            typeSpec,
+            shape,
+            material,
+            status,
+            pageNumber: p.pageNumber || pageNum,
+          });
+        }
+
+        // If pole includes an array of structures (e.g. structures: ["N1", "CE1"] or estruturas: ["N1"])
+        const inlineStructs = p.structures || p.estruturas || p.armacoes || [];
+        if (Array.isArray(inlineStructs)) {
+          inlineStructs.forEach((codeStr: any, sIdx: number) => {
+            const structCode = typeof codeStr === "string" ? codeStr.trim() : (codeStr.code || codeStr.codigo || "");
+            if (structCode) {
+              const baseStructId = `${poleId}_${structCode}`;
+              let structId = baseStructId;
+              let sfx = 2;
+              while (target.detectedStructures.some((existing: any) => existing.id === structId)) {
+                structId = `${baseStructId}_${sfx++}`;
+              }
+              target.detectedStructures.push({
+                id: structId,
+                code: structCode,
+                voltage: structCode.toUpperCase().startsWith("CE") || structCode.toUpperCase().startsWith("2CE") ? "BT" : "MT",
+                status,
+                associatedPost: poleId,
+                description: `Estrutura ${structCode} associada ao ${poleId}`,
+                pageNumber: p.pageNumber || pageNum,
+              });
+            }
+          });
+        }
       });
     }
 
-    if (Array.isArray(source.detectedStructures)) {
-      source.detectedStructures.forEach((s: any) => {
-        target.detectedStructures.push({ ...s, pageNumber: pageNum });
+    // 2. Structures (detectedStructures, structures, estruturas, armacoes)
+    const rawStructs = src.detectedStructures || src.structures || src.estruturas || src.armacoes || [];
+    if (Array.isArray(rawStructs)) {
+      rawStructs.forEach((s: any, idx: number) => {
+        const code = s.code || s.codigo || s.mnemonicCode || s.tipo || "";
+        if (!code) return;
+        const candidateId = s.id || `ESTR_${pageNum}_${target.detectedStructures.length + 1}`;
+        let finalStructId = candidateId;
+        let suffix = 2;
+        while (target.detectedStructures.some((existing: any) => existing.id === finalStructId)) {
+          finalStructId = `${candidateId}_${suffix++}`;
+        }
+        target.detectedStructures.push({
+          ...s,
+          id: finalStructId,
+          code,
+          voltage: s.voltage || (String(code).toUpperCase().startsWith("CE") ? "BT" : "MT"),
+          status: s.status || s.estado || "INSTALAR",
+          associatedPost: s.associatedPost || s.posteAssociado || "11-300",
+          pageNumber: s.pageNumber || pageNum,
+        });
       });
     }
 
-    if (Array.isArray(source.detectedEquipment)) {
-      source.detectedEquipment.forEach((eq: any) => {
-        target.detectedEquipment.push({ ...eq, pageNumber: pageNum });
+    // 3. Equipment (detectedEquipment, detectedEquipments, equipment, equipamentos)
+    const rawEquip = src.detectedEquipment || src.detectedEquipments || src.equipment || src.equipamentos || [];
+    if (Array.isArray(rawEquip)) {
+      rawEquip.forEach((eq: any, idx: number) => {
+        const eqId = eq.id || `EQ_${pageNum}_${target.detectedEquipment.length + 1}`;
+        target.detectedEquipment.push({
+          ...eq,
+          id: eqId,
+          code: eq.code || eq.codigo || eq.specification || eq.type || "CHAVE",
+          type: eq.type || eq.tipo || "EQUIPAMENTO",
+          status: eq.status || eq.estado || "INSTALAR",
+          quantity: Number(eq.quantity || eq.quantidade) || 1,
+          pageNumber: eq.pageNumber || pageNum,
+        });
       });
     }
 
-    if (Array.isArray(source.detectedTransformers)) {
-      source.detectedTransformers.forEach((t: any) => {
-        target.detectedTransformers.push({ ...t, pageNumber: pageNum });
+    // 4. Transformers (detectedTransformers, transformers, transformadores, trafos)
+    const rawTrafos = src.detectedTransformers || src.transformers || src.transformadores || src.trafos || [];
+    if (Array.isArray(rawTrafos)) {
+      rawTrafos.forEach((t: any, idx: number) => {
+        const trId = t.id || `TR_${pageNum}_${target.detectedTransformers.length + 1}`;
+        target.detectedTransformers.push({
+          ...t,
+          id: trId,
+          powerKva: t.powerKva || t.potenciaKva || t.potencia || "45",
+          voltage: t.voltage || t.tensao || "15kV",
+          type: t.type || t.tipo || "TRIFASICO",
+          status: t.status || t.estado || "INSTALAR",
+          pageNumber: t.pageNumber || pageNum,
+        });
       });
     }
 
-    if (Array.isArray(source.detectedGuys)) {
-      source.detectedGuys.forEach((g: any) => {
-        target.detectedGuys.push({ ...g, pageNumber: pageNum });
+    // 5. Guys (detectedGuys, guys, estais, ancoras)
+    const rawGuys = src.detectedGuys || src.guys || src.estais || src.ancoras || [];
+    if (Array.isArray(rawGuys)) {
+      rawGuys.forEach((g: any, idx: number) => {
+        const guyId = g.id || `EST_${pageNum}_${target.detectedGuys.length + 1}`;
+        target.detectedGuys.push({
+          ...g,
+          id: guyId,
+          type: g.type || g.tipo || "ANCORA",
+          quantity: Number(g.quantity || g.quantidade) || 1,
+          status: g.status || g.estado || "INSTALAR",
+          pageNumber: g.pageNumber || pageNum,
+        });
       });
     }
 
-    if (Array.isArray(source.detectedCables)) {
-      source.detectedCables.forEach((c: any) => {
-        target.detectedCables.push({ ...c, pageNumber: pageNum });
+    // 6. Cables (detectedCables, cables, cabos, condutores)
+    const rawCables = src.detectedCables || src.cables || src.cabos || src.condutores || [];
+    if (Array.isArray(rawCables)) {
+      rawCables.forEach((c: any, idx: number) => {
+        const cabId = c.id || `CAB_${pageNum}_${target.detectedCables.length + 1}`;
+        target.detectedCables.push({
+          ...c,
+          id: cabId,
+          cableType: c.cableType || c.tipoCabo || c.tipo || "CAA 1/0 AWG",
+          voltage: c.voltage || c.tensao || "MT",
+          status: c.status || c.estado || "INSTALAR",
+          spansCount: Number(c.spansCount || c.vaos) || 1,
+          estimatedLengthMeters: Number(c.estimatedLengthMeters || c.metragem || c.comprimento) || 40,
+          pageNumber: c.pageNumber || pageNum,
+        });
       });
     }
   }
