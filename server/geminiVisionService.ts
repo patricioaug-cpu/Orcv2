@@ -30,7 +30,14 @@ export class GeminiVisionService {
   private getClient(): GoogleGenAI | null {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) return null;
-    return new GoogleGenAI({ apiKey });
+    return new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
   }
 
   /**
@@ -44,16 +51,18 @@ export class GeminiVisionService {
   ): Promise<VisionExtractionResult> {
     const ai = this.getClient();
     if (!ai) {
-      throw new Error("Chave de API GEMINI_API_KEY não configurada no ambiente.");
+      throw new Error(
+        "Chave de API GEMINI_API_KEY não configurada no ambiente. Configure a variável GEMINI_API_KEY no painel da Vercel (Project Settings > Environment Variables)."
+      );
     }
 
     if (jobId && (await jobStorage.isJobCancelled(jobId))) {
       throw new Error("JOB_CANCELLED");
     }
 
-    // Supported Gemini models per guidelines: gemini-3.6-flash is highly stable for multimodal vision, with gemini-3.8-flash and gemini-flash-latest as fallbacks
-    const primaryModel = process.env.GEMINI_PRIMARY_MODEL || "gemini-3.6-flash";
-    const fallbackModels = ["gemini-3.8-flash", "gemini-flash-latest"];
+    // Supported Gemini models per guidelines: gemini-3.8-flash is the standard default model, with gemini-flash-latest and gemini-3.1-flash-lite as fallbacks
+    const primaryModel = process.env.GEMINI_PRIMARY_MODEL || "gemini-3.8-flash";
+    const fallbackModels = ["gemini-flash-latest", "gemini-3.1-flash-lite"];
     const models = [primaryModel, ...fallbackModels.filter((m) => m !== primaryModel)];
 
     const compactPrompt = `Analise a prancha técnica do projeto elétrico CEMIG (Tensão: ${voltageLabel}).
@@ -75,8 +84,8 @@ REGRAS:
 
     for (let mIdx = 0; mIdx < models.length; mIdx++) {
       const modelName = models[mIdx];
-      const MAX_RETRIES_PER_MODEL = 3;
-      const backoffDelays = [2000, 4000, 8000];
+      const MAX_RETRIES_PER_MODEL = 2;
+      const backoffDelays = [1500, 3000];
 
       for (let attempt = 0; attempt < MAX_RETRIES_PER_MODEL; attempt++) {
         if (jobId && (await jobStorage.isJobCancelled(jobId))) {
@@ -86,7 +95,7 @@ REGRAS:
         try {
           console.log(`[GeminiVision] Chamando modelo ${modelName} (tentativa ${attempt + 1}/${MAX_RETRIES_PER_MODEL})...`);
 
-          const MODEL_TIMEOUT_MS = 28000;
+          const MODEL_TIMEOUT_MS = 20000;
           let timeoutTimer: NodeJS.Timeout | null = null;
           const timeoutPromise = new Promise<never>((_, reject) => {
             timeoutTimer = setTimeout(() => {
@@ -94,7 +103,14 @@ REGRAS:
             }, MODEL_TIMEOUT_MS);
           });
 
-          const rawData = imageBase64.includes(";base64,") ? imageBase64.split(";base64,")[1] : imageBase64;
+          const rawData = (imageBase64.includes(";base64,") ? imageBase64.split(";base64,")[1] : imageBase64)
+            .replace(/[\r\n\s]+/g, "")
+            .trim();
+
+          if (!rawData || rawData.length < 30) {
+            throw new Error("Formato base64 de imagem ou prancha técnica vazio ou corrompido.");
+          }
+
           let effectiveMime = mimeType;
           if (imageBase64.includes(";base64,")) {
             const extractedMime = imageBase64.split(";base64,")[0].replace("data:", "").trim();

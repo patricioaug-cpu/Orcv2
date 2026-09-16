@@ -1280,6 +1280,11 @@ export default function App() {
           if (resJson?.error) {
             throw new Error(resJson.error);
           }
+          if (rawText && rawText.includes("FUNCTION_INVOCATION_FAILED")) {
+            throw new Error(
+              "Falha na execução da função da Vercel (FUNCTION_INVOCATION_FAILED). Verifique se a chave de ambiente GEMINI_API_KEY está configurada no painel da Vercel (Project Settings > Environment Variables) e reimplante o projeto. Se a prancha técnica for pesada ou multipáginas, exporte a página como imagem JPEG/PNG para otimizar o processamento."
+            );
+          }
           if (rawText && !rawText.startsWith("<")) {
             throw new Error(`Erro no servidor da Vercel (HTTP 500): ${rawText.slice(0, 180)}`);
           }
