@@ -1087,6 +1087,7 @@ app.all(["/api/analyze-project", "/analyze-project"], async (req, res) => {
     let statusCode = 500;
     if (
       errMsg.includes("503") ||
+      errMsg.includes("SERVICO_INDISPONIVEL") ||
       errMsg.includes("high demand") ||
       errMsg.includes("UNAVAILABLE") ||
       errMsg.includes("temporarily unavailable") ||
@@ -1095,7 +1096,7 @@ app.all(["/api/analyze-project", "/analyze-project"], async (req, res) => {
     ) {
       statusCode = 503;
       friendlyMessage =
-        "O serviço de IA está temporariamente com alta demanda (503). Por favor, aguarde alguns segundos e tente novamente.";
+        "O serviço de IA da Google está temporariamente com alta demanda (503). Por favor, aguarde alguns segundos e tente novamente.";
     } else if (errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota")) {
       statusCode = 429;
       friendlyMessage =

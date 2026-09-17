@@ -60,14 +60,14 @@ export class GeminiVisionService {
       throw new Error("JOB_CANCELLED");
     }
 
-    // Supported Gemini models: gemini-2.5-flash is ultra-fast with high quota limits, with gemini-flash-latest, gemini-3.8-flash, and flash-lite models as fallbacks
+    // Supported Gemini models cascade: prioritize active, stable, low-latency models
+    // gemini-3.5-flash-lite and gemini-flash-latest have high availability and fast response (<1s)
     const configuredPrimary = process.env.GEMINI_PRIMARY_MODEL?.trim();
     const defaultCascade = [
-      "gemini-2.5-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
       "gemini-flash-latest",
       "gemini-3.8-flash",
-      "gemini-2.5-flash-lite",
-      "gemini-3.1-flash-lite",
     ];
     const models = configuredPrimary
       ? [configuredPrimary, ...defaultCascade.filter((m) => m !== configuredPrimary)]
@@ -215,14 +215,17 @@ REGRAS:
           totalRetries++;
           const errMsg = String(err?.message || "").toLowerCase();
 
-          // If quota / 429 / resource_exhausted, immediately skip to the next model without wasting retry attempts
-          const isQuota =
+          // If quota, model retired (404), or unavailable, immediately skip to next model in cascade
+          const isQuotaOrNotFound =
             errMsg.includes("429") ||
             errMsg.includes("resource_exhausted") ||
-            errMsg.includes("quota");
+            errMsg.includes("quota") ||
+            errMsg.includes("not found") ||
+            errMsg.includes("no longer available") ||
+            errMsg.includes("404");
 
-          if (isQuota) {
-            console.warn(`[GeminiVision] Cota atingida no modelo ${modelName}. Alternando imediatamente para o próximo modelo...`);
+          if (isQuotaOrNotFound) {
+            console.warn(`[GeminiVision] Modelo ${modelName} indisponível ou com cota excedida (${errMsg.slice(0, 60)}). Alternando imediatamente para o próximo modelo...`);
             break;
           }
 
@@ -251,6 +254,16 @@ REGRAS:
       if (errStr.includes("RESOURCE_EXHAUSTED") || errStr.includes("quota") || errStr.includes("429")) {
         throw new Error(
           "Cota de requisições da API Gemini temporariamente atingida (429/Quota Exceeded). Aguarde alguns instantes para nova tentativa ou atualize sua GEMINI_API_KEY no painel da Vercel."
+        );
+      }
+      if (
+        errStr.includes("503") ||
+        errStr.includes("high demand") ||
+        errStr.includes("overloaded") ||
+        errStr.includes("unavailable")
+      ) {
+        throw new Error(
+          "SERVICO_INDISPONIVEL_503: Os modelos da API Gemini estão com alta demanda temporária no Google (503). Por favor, aguarde alguns instantes e tente enviar a prancha novamente."
         );
       }
       if (

@@ -1286,6 +1286,12 @@ export default function App() {
               "Cota de requisições da API Gemini temporariamente atingida (HTTP 429). Aguarde cerca de 1 minuto para nova tentativa ou configure sua chave GEMINI_API_KEY com cota adicional no painel da Vercel."
           );
         }
+        if (response.status === 503) {
+          throw new Error(
+            resJson?.error ||
+              "O serviço de IA do Google está temporariamente com alta demanda (503). Por favor, aguarde alguns instantes e clique em Analisar novamente."
+          );
+        }
         if (response.status === 413) {
           throw new Error("Arquivo muito grande para o servidor em nuvem (HTTP 413). Exporte a prancha como imagem JPEG ou reduza a resolução do arquivo.");
         }
