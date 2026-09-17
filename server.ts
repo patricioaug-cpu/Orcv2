@@ -92,11 +92,18 @@ app.use((req, res, next) => {
     (req as any)._body = true;
     return next();
   }
+  // If the stream is already ended or completed, do not hang waiting on data/end
+  if (req.readableEnded || (req as any).complete) {
+    if (!req.body) req.body = {};
+    (req as any)._body = true;
+    return next();
+  }
   next();
 });
 
 app.use((req, res, next) => {
-  if ((req as any)._body) {
+  if ((req as any)._body || req.readableEnded || (req as any).complete) {
+    if (!req.body) req.body = {};
     return next();
   }
   express.json({
@@ -108,7 +115,7 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
-  if ((req as any)._body) {
+  if ((req as any)._body || req.readableEnded || (req as any).complete) {
     return next();
   }
   express.urlencoded({ extended: true, limit: "50mb" })(req, res, next);

@@ -112,11 +112,31 @@ export default async function handler(req: any, res: any) {
       }
     };
 
-    res.on("finish", safeResolve);
-    res.on("close", safeResolve);
+    const safetyTimer = setTimeout(() => {
+      if (!res.headersSent) {
+        console.warn("[Vercel /api/index] Limite de 9.2s atingido. Enviando resposta HTTP 504 limpa.");
+        try {
+          res.status(504).json({
+            success: false,
+            error: "Tempo limite da função serverless na Vercel (10s) atingido.",
+            details: "FUNCTION_TIMEOUT_GUARD_PREVENTED_INVOCATION_FAIL",
+          });
+        } catch {}
+      }
+      safeResolve();
+    }, 9200);
+
+    const onFinish = () => {
+      clearTimeout(safetyTimer);
+      safeResolve();
+    };
+
+    res.on("finish", onFinish);
+    res.on("close", onFinish);
 
     try {
       app(req, res, (err: any) => {
+        clearTimeout(safetyTimer);
         if (err) {
           console.error("[Vercel /api/index Express Error]:", err);
           if (!res.headersSent) {
@@ -129,6 +149,7 @@ export default async function handler(req: any, res: any) {
         safeResolve();
       });
     } catch (err: any) {
+      clearTimeout(safetyTimer);
       console.error("[Vercel /api/index Sync Error]:", err);
       if (!res.headersSent) {
         res.status(500).json({

@@ -89,11 +89,28 @@ REGRAS:
 
     let totalRetries = 0;
     let lastError: any = null;
-    const isVercelServerless = Boolean(process.env.VERCEL || process.env.IS_SERVERLESS);
-    // On Vercel Serverless, limit timeout to 8.5s per attempt so function never crashes from platform timeout
-    const MODEL_TIMEOUT_MS = isVercelServerless ? 8500 : 25000;
+    const isVercelServerless = Boolean(
+      process.env.VERCEL ||
+      process.env.IS_SERVERLESS ||
+      process.env.AWS_LAMBDA_FUNCTION_NAME
+    );
+
+    // On Vercel Serverless (Hobby plan 10s ceiling), establish a hard global time budget of 8.0s
+    // so the function ALWAYS returns a clean response before Vercel's edge proxy can kill it
+    const FUNCTION_GLOBAL_DEADLINE_MS = isVercelServerless ? 8000 : 55000;
+    const globalStartTimestamp = Date.now();
 
     for (let mIdx = 0; mIdx < models.length; mIdx++) {
+      const elapsedTotal = Date.now() - globalStartTimestamp;
+      const remainingGlobalMs = FUNCTION_GLOBAL_DEADLINE_MS - elapsedTotal;
+
+      if (isVercelServerless && remainingGlobalMs < 2000) {
+        console.warn(
+          `[GeminiVision] Limite de tempo seguro da Vercel atingido (${elapsedTotal}ms decorridos). Encerrando cascata para resposta limpa.`
+        );
+        break;
+      }
+
       const modelName = models[mIdx];
       const MAX_RETRIES_PER_MODEL = isVercelServerless ? 1 : 2;
       const backoffDelays = [1000, 2500];
@@ -103,14 +120,24 @@ REGRAS:
           throw new Error("JOB_CANCELLED");
         }
 
+        const currentRemaining = FUNCTION_GLOBAL_DEADLINE_MS - (Date.now() - globalStartTimestamp);
+        if (isVercelServerless && currentRemaining < 2000) {
+          break;
+        }
+
+        // Dynamically compute timeout for this call so it never exceeds remaining budget
+        const callTimeoutMs = isVercelServerless
+          ? Math.max(1500, Math.min(7500, currentRemaining - 400))
+          : 25000;
+
         try {
-          console.log(`[GeminiVision] Chamando modelo ${modelName} (tentativa ${attempt + 1}/${MAX_RETRIES_PER_MODEL})...`);
+          console.log(`[GeminiVision] Chamando modelo ${modelName} (tentativa ${attempt + 1}/${MAX_RETRIES_PER_MODEL}, timeout ${Math.round(callTimeoutMs / 1000)}s)...`);
 
           let timeoutTimer: NodeJS.Timeout | null = null;
           const timeoutPromise = new Promise<never>((_, reject) => {
             timeoutTimer = setTimeout(() => {
-              reject(new Error(`Timeout de ${MODEL_TIMEOUT_MS / 1000}s atingido em ${modelName}`));
-            }, MODEL_TIMEOUT_MS);
+              reject(new Error(`Timeout de ${Math.round(callTimeoutMs / 1000)}s atingido em ${modelName}`));
+            }, callTimeoutMs);
           });
 
           const rawData = (imageBase64.includes(";base64,") ? imageBase64.split(";base64,")[1] : imageBase64)
@@ -226,6 +253,21 @@ REGRAS:
           "Cota de requisições da API Gemini temporariamente atingida (429/Quota Exceeded). Aguarde alguns instantes para nova tentativa ou atualize sua GEMINI_API_KEY no painel da Vercel."
         );
       }
+      if (
+        errStr.includes("timeout") ||
+        errStr.includes("tempo limite") ||
+        (isVercelServerless && Date.now() - globalStartTimestamp >= 7000)
+      ) {
+        throw new Error(
+          "TEMPO_LIMITE_VERCEL: O tempo limite da função serverless na Vercel (10s) foi atingido. Recomendação: Exporte a prancha como imagem JPEG ou PNG — imagens são lidas instantaneamente pelo modelo sem esgotar o tempo do servidor."
+        );
+      }
+    }
+
+    if (isVercelServerless && Date.now() - globalStartTimestamp >= 7000) {
+      throw new Error(
+        "TEMPO_LIMITE_VERCEL: O tempo limite da função serverless na Vercel (10s) foi atingido. Recomendação: Exporte a prancha como imagem JPEG ou PNG — imagens são lidas instantaneamente pelo modelo sem esgotar o tempo do servidor."
+      );
     }
 
     throw lastError || new Error("Falha ao interpretar prancha após todas as tentativas.");

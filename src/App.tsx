@@ -45,6 +45,7 @@ import {
   ADMIN_EMAIL,
   getOrCreateDeviceSerial,
 } from "./services/authService";
+import { convertPdfToOptimizedImage } from "./utils/pdfToImage";
 import {
   Upload,
   FileUp,
@@ -1031,31 +1032,39 @@ export default function App() {
     const isPdf = file.type.includes("pdf") || fileNameLower.endsWith(".pdf");
 
     if (isPdf) {
-      if (file.size > 3.0 * 1024 * 1024) {
-        throw new Error(
-          `O arquivo PDF selecionado (${(file.size / (1024 * 1024)).toFixed(1)} MB) ultrapassa o limite de 3.0 MB para envio direto na nuvem Vercel (limite para funções serverless). Para pranchas maiores, recomendamos exportar a página como imagem JPEG ou PNG — o sistema otimiza imagens automaticamente mantendo todos os postes, estruturas e equipamentos nítidos.`
-        );
+      try {
+        // Automatically convert PDF sheet to crisp, high-definition JPEG in browser
+        // Bypasses Vercel serverless CPU limits and guarantees instant Gemini processing (<3s)
+        const converted = await convertPdfToOptimizedImage(file);
+        return converted;
+      } catch (pdfErr) {
+        console.warn("[App] Não foi possível renderizar PDF via Canvas no cliente, tentando envio direto:", pdfErr);
+        if (file.size > 2.8 * 1024 * 1024) {
+          throw new Error(
+            `O arquivo PDF (${(file.size / (1024 * 1024)).toFixed(1)} MB) ultrapassa o limite de 2.8 MB da Vercel. Exporte a página da prancha técnica como imagem JPEG ou PNG para leitura direta pelo modelo.`
+          );
+        }
+
+        const base64Data = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          const timer = setTimeout(() => {
+            reject(new Error("Tempo limite excedido ao ler o arquivo PDF. Tente novamente com um arquivo menor."));
+          }, 30000);
+
+          reader.onload = () => {
+            clearTimeout(timer);
+            const result = reader.result as string;
+            const base64Clean = result.split(",")[1] || result;
+            resolve(base64Clean);
+          };
+          reader.onerror = (err) => {
+            clearTimeout(timer);
+            reject(err);
+          };
+          reader.readAsDataURL(file);
+        });
+        return { base64Data, mimeType: "application/pdf" };
       }
-
-      const base64Data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        const timer = setTimeout(() => {
-          reject(new Error("Tempo limite excedido ao ler o arquivo PDF. Tente novamente com um arquivo menor."));
-        }, 45000);
-
-        reader.onload = () => {
-          clearTimeout(timer);
-          const result = reader.result as string;
-          const base64Clean = result.split(",")[1] || result;
-          resolve(base64Clean);
-        };
-        reader.onerror = (err) => {
-          clearTimeout(timer);
-          reject(err);
-        };
-        reader.readAsDataURL(file);
-      });
-      return { base64Data, mimeType: "application/pdf" };
     }
 
     if (file.size > 25 * 1024 * 1024) {
