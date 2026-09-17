@@ -12,14 +12,11 @@ process.on("uncaughtException", (err) => {
 
 export const config = {
   maxDuration: 60,
-  api: {
-    bodyParser: false,
-  },
 };
 
 /**
  * Safely consumes and parses the request body stream if not already parsed by Vercel.
- * Prevents stream deadlocks, hangs or body-parser unhandled errors.
+ * Prevents stream deadlocks, hangs or body-parser unhandled errors on Vercel Serverless.
  */
 async function ensureBodyParsed(req: any): Promise<void> {
   // If already parsed into an object, mark as parsed
@@ -50,26 +47,50 @@ async function ensureBodyParsed(req: any): Promise<void> {
     }
   }
 
-  // If readable stream is present, buffer it
+  // If stream is already completed or ended, do not wait on it
+  if (req.readableEnded || req.complete) {
+    return;
+  }
+
+  // If readable stream is present, buffer it with a strict 2000ms timeout race to prevent serverless deadlocks
   if (typeof req.on === "function") {
-    try {
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) {
-        chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
-      }
-      if (chunks.length > 0) {
-        const raw = Buffer.concat(chunks).toString("utf-8");
-        req.rawBody = raw;
-        try {
-          req.body = JSON.parse(raw);
-          req._body = true;
-        } catch {
-          req.body = raw;
+    await new Promise<void>((resolve) => {
+      let finished = false;
+      const finish = () => {
+        if (!finished) {
+          finished = true;
+          resolve();
         }
-      }
-    } catch (streamErr) {
-      console.error("[Vercel /api/analyze-project body stream error]:", streamErr);
-    }
+      };
+
+      const safetyTimer = setTimeout(finish, 2000);
+      const chunks: Buffer[] = [];
+
+      req.on("data", (chunk: any) => {
+        chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+      });
+
+      req.on("end", () => {
+        clearTimeout(safetyTimer);
+        if (chunks.length > 0) {
+          const raw = Buffer.concat(chunks).toString("utf-8");
+          req.rawBody = raw;
+          try {
+            req.body = JSON.parse(raw);
+            req._body = true;
+          } catch {
+            req.body = raw;
+          }
+        }
+        finish();
+      });
+
+      req.on("error", (err: any) => {
+        clearTimeout(safetyTimer);
+        console.error("[Vercel /api/analyze-project body stream error]:", err);
+        finish();
+      });
+    });
   }
 }
 
@@ -84,7 +105,11 @@ export default async function handler(req: any, res: any) {
   }
 
   // Safely parse request body stream before handing to Express
-  await ensureBodyParsed(req);
+  try {
+    await ensureBodyParsed(req);
+  } catch (parseErr) {
+    console.warn("[Vercel /api/analyze-project ensureBodyParsed warning]:", parseErr);
+  }
 
   return new Promise((resolve) => {
     let resolved = false;
@@ -96,6 +121,7 @@ export default async function handler(req: any, res: any) {
     };
 
     res.on("finish", safeResolve);
+    res.on("close", safeResolve);
 
     try {
       app(req, res, (err: any) => {

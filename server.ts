@@ -1092,7 +1092,15 @@ app.all(["/api/analyze-project", "/analyze-project"], async (req, res) => {
     } else if (errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota")) {
       statusCode = 429;
       friendlyMessage =
-        "Limite de requisições temporário atingido (429). Por favor, aguarde alguns instantes e tente novamente.";
+        "Cota de requisições da API Gemini temporariamente atingida (429/Quota Exceeded). Aguarde alguns instantes para nova tentativa ou configure sua chave GEMINI_API_KEY no painel da Vercel.";
+    } else if (errMsg.includes("GEMINI_API_KEY") || errMsg.includes("chave de api") || errMsg.includes("api key")) {
+      statusCode = 401;
+      friendlyMessage =
+        "Chave GEMINI_API_KEY não configurada ou inválida. Adicione a variável de ambiente GEMINI_API_KEY no painel da Vercel (Project Settings > Environment Variables).";
+    } else if (errMsg.includes("timeout") || errMsg.includes("tempo limite")) {
+      statusCode = 504;
+      friendlyMessage =
+        "Tempo limite excedido na análise da prancha. Para pranchas de alta complexidade ou multipáginas, exporte a página do projeto em formato JPEG/PNG.";
     } else if (errMsg.includes("JOB_CANCELLED")) {
       return res.status(200).json({ success: true, cancelled: true, message: "Processamento cancelado com sucesso." });
     }

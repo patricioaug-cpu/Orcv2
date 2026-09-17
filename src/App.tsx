@@ -1265,11 +1265,26 @@ export default function App() {
         if (response.status === 403 || resJson?.trialExpired) {
           setIsTrialExpiredModalOpen(true);
         }
+        if (response.status === 401) {
+          throw new Error(
+            resJson?.error ||
+              "Chave GEMINI_API_KEY não configurada ou inválida. Adicione a variável GEMINI_API_KEY no painel da Vercel (Project Settings > Environment Variables) e reimplante o projeto."
+          );
+        }
+        if (response.status === 429) {
+          throw new Error(
+            resJson?.error ||
+              "Cota de requisições da API Gemini temporariamente atingida (HTTP 429). Aguarde cerca de 1 minuto para nova tentativa ou configure sua chave GEMINI_API_KEY com cota adicional no painel da Vercel."
+          );
+        }
         if (response.status === 413) {
           throw new Error("Arquivo muito grande para o servidor em nuvem (HTTP 413). Exporte a prancha como imagem JPEG ou reduza a resolução do arquivo.");
         }
         if (response.status === 504 || response.status === 502) {
-          throw new Error(`Servidor temporariamente ocupado ou tempo limite excedido (HTTP ${response.status}). Tente novamente.`);
+          throw new Error(
+            resJson?.error ||
+              `Tempo limite excedido na análise da prancha (HTTP ${response.status}). Exporte a folha do projeto como imagem JPEG para um processamento ultra-rápido.`
+          );
         }
         if (response.status === 404) {
           throw new Error(
@@ -1282,7 +1297,7 @@ export default function App() {
           }
           if (rawText && rawText.includes("FUNCTION_INVOCATION_FAILED")) {
             throw new Error(
-              "Falha na execução da função da Vercel (FUNCTION_INVOCATION_FAILED). Verifique se a chave de ambiente GEMINI_API_KEY está configurada no painel da Vercel (Project Settings > Environment Variables) e reimplante o projeto. Se a prancha técnica for pesada ou multipáginas, exporte a página como imagem JPEG/PNG para otimizar o processamento."
+              "Falha na invocação da função da Vercel (FUNCTION_INVOCATION_FAILED). A função serverless atingiu o tempo limite ou a cota do Gemini foi esgotada. Recomendação: Exporte a prancha técnica como imagem JPEG ou PNG para leitura direta e instantânea pelo modelo."
             );
           }
           if (rawText && !rawText.startsWith("<")) {

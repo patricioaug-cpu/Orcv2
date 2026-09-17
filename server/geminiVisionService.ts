@@ -60,10 +60,18 @@ export class GeminiVisionService {
       throw new Error("JOB_CANCELLED");
     }
 
-    // Supported Gemini models per guidelines: gemini-3.8-flash is the standard default model, with gemini-flash-latest and gemini-3.1-flash-lite as fallbacks
-    const primaryModel = process.env.GEMINI_PRIMARY_MODEL || "gemini-3.8-flash";
-    const fallbackModels = ["gemini-flash-latest", "gemini-3.1-flash-lite"];
-    const models = [primaryModel, ...fallbackModels.filter((m) => m !== primaryModel)];
+    // Supported Gemini models: gemini-2.5-flash is ultra-fast with high quota limits, with gemini-flash-latest, gemini-3.8-flash, and flash-lite models as fallbacks
+    const configuredPrimary = process.env.GEMINI_PRIMARY_MODEL?.trim();
+    const defaultCascade = [
+      "gemini-2.5-flash",
+      "gemini-flash-latest",
+      "gemini-3.8-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-3.1-flash-lite",
+    ];
+    const models = configuredPrimary
+      ? [configuredPrimary, ...defaultCascade.filter((m) => m !== configuredPrimary)]
+      : defaultCascade;
 
     const compactPrompt = `Analise a prancha técnica do projeto elétrico CEMIG (Tensão: ${voltageLabel}).
 EXTRAÇÃO DE REDE:
@@ -81,11 +89,14 @@ REGRAS:
 
     let totalRetries = 0;
     let lastError: any = null;
+    const isVercelServerless = Boolean(process.env.VERCEL || process.env.IS_SERVERLESS);
+    // On Vercel Serverless, limit timeout to 8.5s per attempt so function never crashes from platform timeout
+    const MODEL_TIMEOUT_MS = isVercelServerless ? 8500 : 25000;
 
     for (let mIdx = 0; mIdx < models.length; mIdx++) {
       const modelName = models[mIdx];
-      const MAX_RETRIES_PER_MODEL = 2;
-      const backoffDelays = [1500, 3000];
+      const MAX_RETRIES_PER_MODEL = isVercelServerless ? 1 : 2;
+      const backoffDelays = [1000, 2500];
 
       for (let attempt = 0; attempt < MAX_RETRIES_PER_MODEL; attempt++) {
         if (jobId && (await jobStorage.isJobCancelled(jobId))) {
@@ -95,7 +106,6 @@ REGRAS:
         try {
           console.log(`[GeminiVision] Chamando modelo ${modelName} (tentativa ${attempt + 1}/${MAX_RETRIES_PER_MODEL})...`);
 
-          const MODEL_TIMEOUT_MS = 20000;
           let timeoutTimer: NodeJS.Timeout | null = null;
           const timeoutPromise = new Promise<never>((_, reject) => {
             timeoutTimer = setTimeout(() => {
@@ -177,18 +187,27 @@ REGRAS:
           lastError = err;
           totalRetries++;
           const errMsg = String(err?.message || "").toLowerCase();
-          const isTransient =
+
+          // If quota / 429 / resource_exhausted, immediately skip to the next model without wasting retry attempts
+          const isQuota =
             errMsg.includes("429") ||
-            errMsg.includes("503") ||
             errMsg.includes("resource_exhausted") ||
+            errMsg.includes("quota");
+
+          if (isQuota) {
+            console.warn(`[GeminiVision] Cota atingida no modelo ${modelName}. Alternando imediatamente para o próximo modelo...`);
+            break;
+          }
+
+          const isTransient =
+            errMsg.includes("503") ||
             errMsg.includes("overloaded") ||
             errMsg.includes("timeout") ||
             errMsg.includes("tempo limite");
 
-          if (isTransient && attempt < MAX_RETRIES_PER_MODEL - 1) {
-            // Exponential backoff + random jitter (200-600ms)
-            const baseDelay = backoffDelays[attempt] || 4000;
-            const jitter = Math.floor(Math.random() * 400);
+          if (isTransient && attempt < MAX_RETRIES_PER_MODEL - 1 && !isVercelServerless) {
+            const baseDelay = backoffDelays[attempt] || 1000;
+            const jitter = Math.floor(Math.random() * 300);
             const waitTime = baseDelay + jitter;
             console.warn(`[GeminiVision] Erro transitório (${errMsg.slice(0, 70)}). Aguardando ${waitTime}ms para retry...`);
             await new Promise((res) => setTimeout(res, waitTime));
@@ -197,6 +216,15 @@ REGRAS:
             break;
           }
         }
+      }
+    }
+
+    if (lastError) {
+      const errStr = String(lastError?.message || "");
+      if (errStr.includes("RESOURCE_EXHAUSTED") || errStr.includes("quota") || errStr.includes("429")) {
+        throw new Error(
+          "Cota de requisições da API Gemini temporariamente atingida (429/Quota Exceeded). Aguarde alguns instantes para nova tentativa ou atualize sua GEMINI_API_KEY no painel da Vercel."
+        );
       }
     }
 
