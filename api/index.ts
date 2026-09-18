@@ -12,6 +12,11 @@ process.on("uncaughtException", (err) => {
 
 export const config = {
   maxDuration: 60,
+  api: {
+    bodyParser: {
+      sizeLimit: "4.5mb",
+    },
+  },
 };
 
 /**
@@ -49,7 +54,7 @@ async function ensureBodyParsed(req: any): Promise<void> {
     return;
   }
 
-  // If readable stream is present, buffer it with a strict 2000ms timeout race to prevent serverless deadlocks
+  // If readable stream is present, buffer it with a safety window to prevent serverless deadlocks
   if (typeof req.on === "function") {
     await new Promise<void>((resolve) => {
       let finished = false;
@@ -60,7 +65,7 @@ async function ensureBodyParsed(req: any): Promise<void> {
         }
       };
 
-      const safetyTimer = setTimeout(finish, 2000);
+      const safetyTimer = setTimeout(finish, 15000);
       const chunks: Buffer[] = [];
 
       req.on("data", (chunk: any) => {

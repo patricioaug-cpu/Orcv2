@@ -12,6 +12,11 @@ process.on("uncaughtException", (err) => {
 
 export const config = {
   maxDuration: 60,
+  api: {
+    bodyParser: {
+      sizeLimit: "4.5mb",
+    },
+  },
 };
 
 /**
@@ -52,7 +57,7 @@ async function ensureBodyParsed(req: any): Promise<void> {
     return;
   }
 
-  // If readable stream is present, buffer it with a strict 2000ms timeout race to prevent serverless deadlocks
+  // If readable stream is present and body is still empty, buffer stream with safety window
   if (typeof req.on === "function") {
     await new Promise<void>((resolve) => {
       let finished = false;
@@ -63,7 +68,8 @@ async function ensureBodyParsed(req: any): Promise<void> {
         }
       };
 
-      const safetyTimer = setTimeout(finish, 2000);
+      // Generous 15s timeout for large uploads before failing safely
+      const streamTimer = setTimeout(finish, 15000);
       const chunks: Buffer[] = [];
 
       req.on("data", (chunk: any) => {
@@ -71,7 +77,7 @@ async function ensureBodyParsed(req: any): Promise<void> {
       });
 
       req.on("end", () => {
-        clearTimeout(safetyTimer);
+        clearTimeout(streamTimer);
         if (chunks.length > 0) {
           const raw = Buffer.concat(chunks).toString("utf-8");
           req.rawBody = raw;
@@ -86,7 +92,7 @@ async function ensureBodyParsed(req: any): Promise<void> {
       });
 
       req.on("error", (err: any) => {
-        clearTimeout(safetyTimer);
+        clearTimeout(streamTimer);
         console.error("[Vercel /api/analyze-project body stream error]:", err);
         finish();
       });

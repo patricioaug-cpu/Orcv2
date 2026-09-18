@@ -405,7 +405,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
           </div>
         </div>
 
-        {/* 3. DRAWER FOOTER - Encerrar Sessão do Projeto */}
+        {/* 3. DRAWER FOOTER - Sair do Aplicativo */}
         <div className="p-4 bg-slate-950 border-t border-slate-800 shrink-0">
           <button
             id="btn-drawer-exit-app"
@@ -414,10 +414,10 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               onClose();
             }}
             className="w-full inline-flex items-center justify-center gap-2 p-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 hover:border-rose-500 text-xs font-bold uppercase tracking-wider transition-all active:scale-95 shadow-md cursor-pointer select-none"
-            title="Sair e encerrar o projeto"
+            title="Sair e fechar o aplicativo"
           >
-            <XCircle className="w-4 h-4 text-rose-400 group-hover:text-white shrink-0" />
-            <span>Encerrar Sessão do Projeto</span>
+            <LogOut className="w-4 h-4 text-rose-400 group-hover:text-white shrink-0" />
+            <span>Sair do Aplicativo</span>
           </button>
         </div>
       </div>

@@ -223,6 +223,7 @@ export default function App() {
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
   const [isTrialExpiredModalOpen, setIsTrialExpiredModalOpen] = useState<boolean>(false);
   const [showSplash, setShowSplash] = useState<boolean>(false);
+  const [isAppClosed, setIsAppClosed] = useState<boolean>(false);
 
   // Sync trial info from backend on mount or user change
   useEffect(() => {
@@ -626,6 +627,11 @@ export default function App() {
 
   // Exit application session
   const handleExitApp = () => {
+    try {
+      clearStoredUser();
+    } catch {}
+    setCurrentUser(null);
+    setTrialInfo(null);
     setProjectData(EMPTY_PROJECT);
     setProfitMargin(0);
     setCurrentFileName("");
@@ -633,14 +639,18 @@ export default function App() {
     setHasSaved(false);
     setShowExitConfirmModal(false);
     setIsSidebarDrawerOpen(false);
-    setSaveToast({
-      show: true,
-      type: "success",
-      message: "Sessão encerrada. O aplicativo está pronto para um novo projeto.",
-    });
-    setTimeout(() => {
-      setSaveToast((prev) => ({ ...prev, show: false }));
-    }, 3500);
+
+    // Tenta fechar fisicamente a janela/aba do navegador ou webapp
+    try {
+      window.close();
+      window.open("", "_self");
+      window.close();
+    } catch (e) {
+      console.warn("Navegador não permitiu fechamento via window.close():", e);
+    }
+
+    // Marca o aplicativo como encerrado na interface
+    setIsAppClosed(true);
   };
 
   // Load saved projects on mount
@@ -1102,8 +1112,8 @@ export default function App() {
         img.onload = () => {
           clearTimeout(fallbackTimer);
           try {
-            // 2560px provides 2.5K high-definition resolution for reading engineering drawings
-            const maxDim = 2560;
+            // 1800px provides crisp high-definition resolution for reading engineering drawings with ultra-fast upload & AI response
+            const maxDim = 1800;
             let { width, height } = img;
             if (width > maxDim || height > maxDim) {
               if (width > height) {
@@ -1123,17 +1133,17 @@ export default function App() {
               ctx.imageSmoothingQuality = "high";
               ctx.drawImage(img, 0, 0, width, height);
               
-              let quality = 0.88;
+              let quality = 0.82;
               let dataUrl = canvas.toDataURL("image/jpeg", quality);
               let base64 = dataUrl.split(",")[1] || dataUrl;
 
-              // Ensure base64 payload is safely under 3.0MB (well below Vercel's 4.5MB serverless limit)
-              if (base64.length > 3.0 * 1024 * 1024) {
-                dataUrl = canvas.toDataURL("image/jpeg", 0.78);
+              // Ensure base64 payload is safely under 1.8MB (well below Vercel's 4.5MB serverless limit)
+              if (base64.length > 1.8 * 1024 * 1024) {
+                dataUrl = canvas.toDataURL("image/jpeg", 0.72);
                 base64 = dataUrl.split(",")[1] || dataUrl;
               }
-              if (base64.length > 3.0 * 1024 * 1024) {
-                dataUrl = canvas.toDataURL("image/jpeg", 0.68);
+              if (base64.length > 1.8 * 1024 * 1024) {
+                dataUrl = canvas.toDataURL("image/jpeg", 0.62);
                 base64 = dataUrl.split(",")[1] || dataUrl;
               }
               resolve({ base64Data: base64, mimeType: "image/jpeg" });
@@ -1700,6 +1710,39 @@ export default function App() {
     return Object.entries(map).map(([code, count]) => ({ code, count }));
   }, [projectData.structures]);
 
+  if (isAppClosed) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white flex flex-col items-center justify-center p-6 text-center select-none font-sans">
+        <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 sm:p-10 shadow-2xl flex flex-col items-center gap-6">
+          <div className="w-20 h-20 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 shadow-inner">
+            <LogOut className="w-10 h-10" />
+          </div>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mb-3">
+              Aplicativo Encerrado
+            </h1>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Sua sessão foi finalizada e os dados foram limpos com segurança. Você já pode fechar esta aba ou janela do seu navegador.
+            </p>
+          </div>
+          <div className="w-full pt-4 border-t border-slate-800 flex flex-col gap-3">
+            <button
+              id="btn-reopen-app"
+              onClick={() => {
+                setIsAppClosed(false);
+                window.location.reload();
+              }}
+              className="w-full py-3 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold text-sm transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>Reabrir Aplicativo</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-[#f8fafc] text-slate-800 font-sans">
       {/* 1. HEADER BAR - CalcPro Professional Top Command Header with Top-Left Drawer Menu */}
@@ -1777,6 +1820,17 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {/* Botão Sair do Aplicativo no Header */}
+            <button
+              id="btn-header-exit-app"
+              onClick={() => setShowExitConfirmModal(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:py-2 rounded-xl bg-slate-800 hover:bg-rose-600/25 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/50 text-xs sm:text-sm font-bold transition-all active:scale-95 shadow-xs cursor-pointer select-none ml-0.5"
+              title="Sair e fechar o aplicativo"
+            >
+              <LogOut className="w-3.5 h-3.5 text-rose-400" />
+              <span className="hidden sm:inline">Sair</span>
+            </button>
           </div>
 
           {/* Hidden File Input (accessible via Sidebar Drawer) */}
@@ -2619,7 +2673,7 @@ export default function App() {
 
             <div className="p-6 text-slate-700 text-sm">
               <p>
-                Deseja realmente encerrar a sessão de trabalho atual?
+                Deseja realmente sair e fechar o aplicativo? Sua sessão será encerrada e todos os dados temporários serão limpos com segurança.
               </p>
             </div>
 
@@ -2635,7 +2689,7 @@ export default function App() {
                 className="px-4 py-2 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
               >
                 <LogOut className="w-4 h-4" />
-                <span>Sim, Sair do Aplicativo</span>
+                <span>Sim, Sair e Fechar</span>
               </button>
             </div>
           </div>
